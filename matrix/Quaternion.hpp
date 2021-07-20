@@ -326,6 +326,64 @@ public:
     }
 
     /**
+      * Computes the quaternion exponential of the 3D vector u
+      * as proposed in
+      * [1] Sveier A, Sjøberg AM, Egeland O. "Applied Runge–Kutta–Munthe-Kaas Integration
+      *     for the Quaternion Kinematics".Journal of Guidance, Control, and Dynamics. 2019 
+      *
+      * return a quaternion computed as
+      * expq(u)=[cos||u||, sinc||u||*u]
+      * sinc(x)=sin(x)/x in the sin cardinal function
+      *
+      * This can be used to update a quaternion from the body rates
+      * rather than using
+      * qk+1=qk+qk.derivative1(wb)*dt
+      * we can use
+      * qk+1=qk*expq(dt*wb/2)
+      * which is a more robust update.
+      * A re-normalization step might necessary with both methods.
+      *
+      * @param u 3D vector u
+      */
+	static Quaternion expq(const Vector3<Type> u)
+	{
+		const Type tol = Type(1.0e-6);
+		Type u_norm = u.norm();
+		Type sinc;
+		if (u_norm < tol) {
+			sinc = Type(1.0) - u_norm * u_norm / Type(6.0); // this ensure an error smaller than tol^3
+		} else {
+			sinc = Type(sin(u_norm) / u_norm);
+		}
+		Vector<Type, 3> v = sinc * u;
+		return Quaternion<Type> (Type(cos(u_norm)), v(0), v(1), v(2));
+	}
+
+	/** inverse right Jacobian of the quaternion logarithm u
+	  * equation (20) in reference [1] 
+	  * "Applied Runge–Kutta–Munthe-Kaas Integration for the Quaternion Kinematics".
+	  *
+	  * This can be used to update a quaternion kinematic cleanly 
+	  * with higher order integration methods (like RK4) on the quaternion logarithm u.
+	  *
+	  * @param u 3D vector u
+	  */
+	static Dcm<Type> inv_r_jacobian (const Vector3<Type> u)
+	{
+		const Type tol = Type(1.0e-4);
+		Type u_norm = u.norm();
+		Dcm<Type> u_hat=u.hat();
+		if (u_norm<tol) { 	// result smaller than O(||.||^3)
+			return Type(0.5) * (Dcm<Type>() + u_hat +
+							   (Type(1.0 / 3.0) + u_norm * u_norm / Type(45.0)) * u_hat * u_hat);
+		} else {
+			return Type(0.5) * ( Dcm<Type>() + u_hat +
+							     (Type(1.0) - u_norm * Type(cos(u_norm) / sin(u_norm))) / (u_norm * u_norm)
+							     * u_hat * u_hat );
+		}
+	}
+
+    /**
      * Invert quaternion in place
      */
     void invert()
